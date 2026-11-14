@@ -74,9 +74,10 @@ def mainloop(root, *a):
         root.update(); root.update_idletasks()
 
     def run():
-        shot('01-root-access')          # root access + the experimental coding-restore card
-        go_tab(1); shot('02-app-store')  # the on-car App Store installer
-        go_tab(2); shot('03-credits')
+        shot('01-root-access')              # root access + the experimental coding-restore card
+        go_tab(1); shot('02-app-store')      # the on-car App Store installer
+        go_tab(2); shot('03-wireless-bridge')  # the BeeM-Flash wireless bridge + developer probes
+        go_tab(3); shot('04-credits')
         print('shots:', len(shots))
         root.destroy()
 
@@ -98,9 +99,9 @@ def finish():
             p = os.path.join(OUT, n)
             subprocess.run(['convert', p, '-colors', '256', '-define', 'png:compression-level=9', p], check=True)
     sheet = os.path.join(OUT, '00-overview.png')
-    tiles = ['01-root-access.png', '02-app-store.png', '03-credits.png']
+    tiles = ['01-root-access.png', '02-app-store.png', '03-wireless-bridge.png', '04-credits.png']
     if shutil.which('montage') and all(t in names for t in tiles):
-        subprocess.run(['montage'] + [os.path.join(OUT, t) for t in tiles] + ['-tile', '3x1', '-geometry',
+        subprocess.run(['montage'] + [os.path.join(OUT, t) for t in tiles] + ['-tile', '2x2', '-geometry',
                        '680x626+8+8', '-background', '#d9dde3', sheet], check=True)
         if shutil.which('convert'):
             subprocess.run(['convert', sheet, '-depth', '8', '-colors', '256', '-define',

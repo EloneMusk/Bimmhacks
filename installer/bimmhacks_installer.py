@@ -31,7 +31,7 @@ it. Stage C (App Store) needs internet at the car (or a prepared USB stick).
 """
 import argparse, json, os, queue, re, shutil, stat, subprocess, sys, tempfile, threading, time
 
-VERSION = '1.10.1'
+VERSION = '1.11.0'
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 DEFAULT_IP = '169.254.36.47'                # the unit's address with the idrive7-8-ssh-root tool
@@ -45,6 +45,7 @@ SSHROOT_PY = os.path.join(SSHROOT_DIR, 'ssh_enable.py')
 SSHROOT_ENROLL = os.path.join(SSHROOT_DIR, 'data', 'enrollments')
 STORE_DIR = os.environ.get('BIMMHACKS_STORE_DIR') or os.path.join(REPO, 'tools', 'mgu-store')
 STORE_JS = os.path.join(STORE_DIR, 'mgu-install.js')
+BEEM_DIR = os.environ.get('BIMMHACKS_BEEM_DIR') or os.path.join(REPO, 'tools', 'beem-flash')
 ARCHES = ('id7', 'id8-bdc3', 'id8-bcp')
 CODING_BACKUP_PY = os.path.join(HERE, 'coding_backup.py')
 
@@ -632,6 +633,59 @@ def do_store_install(node, ip, key, no_renderer=False, no_uplink=False, log=prin
     log('Afterwards the client installs and updates apps from the car screen - Apps > Store.')
 
 
+# ---- BeeM-Flash wireless bridge: a root helper (tools/beem-flash, MIT, TunedByWali) that lets a phone /
+# xHP reach the car THROUGH the MGU over Wi-Fi, so no ENET cable or paid Wi-Fi-ENET adapter is needed. It
+# installs the same way the MGU's own renderer daemon does: files on /var/opt + a systemd unit. The bridge
+# is OFF by default and consent-gated ON THE CAR; the installer only deploys the helper and runs its
+# read-only probes for testing / development. See tools/beem-flash/docs/BRIDGE.md.
+BEEM_REMOTE = '/var/opt/bimmhacks-beem'        # where the files are staged on the unit before install.sh
+
+# action -> (subdir under tools/beem-flash, files to copy, command to run, intro line)
+BEEM_JOBS = {
+    'probe':     ('beem-bridge', ['beem-bridged.js', 'beem-bridged.service', 'install.sh'], 'sh install.sh --probe',
+                  'Checking whether this head unit can host a Wi-Fi access point (read-only - changes nothing) ...'),
+    'install':   ('beem-bridge', ['beem-bridged.js', 'beem-bridged.service', 'install.sh'], 'sh install.sh',
+                  'Installing the BeeM-Flash wireless bridge helper (root service; starts at boot) ...'),
+    'uninstall': ('beem-bridge', ['uninstall.sh'], 'sh uninstall.sh',
+                  'Removing the BeeM-Flash bridge helper and stopping its access point ...'),
+    'car-probe': ('bridge-probes', ['probe-car.sh'], 'sh probe-car.sh',
+                  'Running the read-only car-side bridge probe (network topology + phone->unit reachability) ...'),
+}
+
+
+def do_beem(action, ssh, ip, key, log=print):
+    """Deploy a BeeM-Flash bridge script to the rooted head unit over SSH and run it. 'probe' and
+    'car-probe' are read-only; 'install' adds a root service; 'uninstall' removes it. The bridge itself
+    stays OFF until the owner enables it on the car with its consent gates. -> (exit code, output)."""
+    if action not in BEEM_JOBS:
+        raise InstallerError('Unknown bridge action: %s' % action)
+    subdir, files, cmd, intro = BEEM_JOBS[action]
+    if not key or not os.path.isfile(key):
+        raise InstallerError('The car SSH key is needed. Do the root-access step first, or pick the key.')
+    src = os.path.join(BEEM_DIR, subdir)
+    for f in files:
+        if not os.path.isfile(os.path.join(src, f)):
+            raise InstallerError('BeeM-Flash bridge files are missing (expected %s in %s).' % (f, src))
+    car = Car(ssh, ip, key, log=log)
+    try:
+        test_connection(car, log)
+        log(intro)
+        remote = BEEM_REMOTE + '/' + subdir
+        car.run('mkdir -p %s' % remote, echo=False)
+        for f in files:
+            with open(os.path.join(src, f), 'rb') as fh:
+                data = fh.read()
+            code, _ = car.run('cat > %s/%s' % (remote, f), stdin_data=data, echo=False)
+            if code:
+                raise InstallerError('Could not copy %s to the head unit (exit %d).' % (f, code))
+        code, out = car.run('cd %s && %s' % (remote, cmd))
+        if code and action == 'install':
+            raise InstallerError('The bridge helper install failed (exit %d; see above).' % code)
+        return code, out
+    finally:
+        car.close()
+
+
 # ---- extra app sources installed through the Store (idrive-apps, and our own apps) --------------
 
 # the Store's built-in sources ship with first-install; these two tabs are about these repos
@@ -875,6 +929,7 @@ CREDITS = [
     ('idrive-apps (cluster / HUD maps)', 'Robert Nisipeanu & contributors - GPL-3.0'),
     ('car-apps (iDrive 8 apps & tools)', 'IterioDev - PolyForm Strict 1.0.0'),
     ('RideTube (unofficial YouTube client)', 'JustAnotherPU - GPL-3.0'),
+    ('BeeM-Flash wireless bridge', 'TunedByWali - MIT'),
     ('Doom engine (doomgeneric) + Freedoom', 'id Software lineage / Freedoom - GPL-2.0'),
 ]
 
@@ -942,7 +997,7 @@ def run_gui():
     tk.Frame(hi, bg=ACCENT, width=10, height=10).pack(side='left', pady=(5, 0))
     tk.Label(hi, text='Bimmhacks', bg=PANEL, fg=INK, font=font(15, 'bold')).pack(side='left', padx=(10, 12))
     tk.Frame(hi, bg=LINE, width=1, height=20).pack(side='left', pady=(3, 0))
-    tk.Label(hi, text='Root access  ·  Coding backup  ·  App Store  ·  BMW iDrive 7 and 8', bg=PANEL, fg=MUTED, font=font(10)).pack(side='left', padx=(12, 0), pady=(3, 0))
+    tk.Label(hi, text='Root access  ·  Coding backup  ·  App Store  ·  Bridge  ·  BMW iDrive 7 and 8', bg=PANEL, fg=MUTED, font=font(10)).pack(side='left', padx=(12, 0), pady=(3, 0))
     tk.Label(hi, text='by Mr. Wali', bg=PANEL, fg=ACCENT, font=font(10, 'bold')).pack(side='right', pady=(3, 0))
     tk.Frame(root, bg=LINE, height=1).pack(fill='x')
 
@@ -1379,7 +1434,54 @@ def run_gui():
     orr3 = row(c2b, pady=(0, 12))
     button(orr3, 'How to publish an app', lambda: _open_path(APP_GUIDE))
 
-    # ======================================================= 3. Credits
+    # ======================================================= 3. Wireless bridge (BeeM-Flash)
+    p4 = section('Wireless Bridge')
+    l4, r4c = two_up(p4, (3, 2))
+    c4 = card(l4, pady=(0, 10), padx=(22, 6))
+    kicker(c4, 'Experimental  ·  needs root')
+    title(c4, 'BeeM-Flash wireless bridge')
+    para(c4, 'A root helper so a phone or xHP can reach the car THROUGH the MGU over Wi-Fi - no ENET cable '
+             'or paid Wi-Fi-ENET adapter. It installs like the head unit\'s own renderer daemon: a service on '
+             '/var/opt that starts at boot.', wrap=470)
+    notice(c4, 'Experimental, for your own car. The bridge is OFF by default and is enabled ON THE CAR with '
+               'its own consent gates (acknowledge > enable > time-boxed lease). This only deploys the helper '
+               'and runs its probes. Root access must be done first.', wrap=470)
+
+    def on_bridge(action, done, confirm=None):
+        _, key, ip, _ = conn_values()
+        if confirm and not messagebox.askokcancel('Wireless bridge', confirm % ip):
+            return
+        start(lambda: do_beem(action, need_ssh(), ip, key, log=log), done)
+
+    br1 = row(c4, pady=(10, 4))
+    button(br1, 'Check unit (AP probe)', lambda: on_bridge(
+        'probe', 'AP probe done - see the activity log for whether this unit can host an access point.'))
+    button(br1, 'Install bridge helper', lambda: on_bridge(
+        'install', 'Bridge helper installed. Enable it ON THE CAR: BeeM-Flash > CONNECT > WIRELESS BRIDGE.',
+        confirm='Install the BeeM-Flash wireless bridge helper on the car at %s?\n\nIt adds a root service '
+                'that can host a Wi-Fi access point and a DoIP listener. The bridge stays OFF until you enable '
+                'it on the car. Experimental; your own vehicle.'), style='Accent.TButton')
+    br2 = row(c4, pady=(0, 12))
+    button(br2, 'Remove bridge helper', lambda: on_bridge(
+        'uninstall', 'Bridge helper removed and the access point stopped.',
+        confirm='Remove the BeeM-Flash bridge helper from the car at %s and stop its access point?'),
+        style='Danger.TButton')
+
+    # ---- right: developer probes -----------------------------------------------------------------
+    c4b = card(r4c, pady=(0, 10), padx=(6, 22))
+    kicker(c4b, 'Testing  ·  development')
+    title(c4b, 'Developer probes')
+    para(c4b, 'Read-only probes for building the bridge out: they map the unit\'s network and test whether a '
+              'phone on the hotspot can reach a listener on the head unit. They send nothing to the car.', wrap=320)
+    br3 = row(c4b, pady=(10, 4))
+    button(br3, 'Car probe (network + reach)', lambda: on_bridge(
+        'car-probe', 'Car probe finished - see the activity log for the P2 / P3 results.',
+        confirm='Run the read-only car-side bridge probe on %s?\n\nIt reports the unit\'s network and opens a '
+                'short-lived listener (about a minute) for a phone-reachability test. It sends nothing to the car.'))
+    br4 = row(c4b, pady=(0, 12))
+    button(br4, 'Bridge design & status', lambda: _open_path(os.path.join(BEEM_DIR, 'docs', 'BRIDGE.md')))
+
+    # ======================================================= 4. Credits
     p3 = section('Credits')
     c3 = card(p3, pady=(10, 10))
     kicker(c3, 'Credits & licences')
@@ -1493,6 +1595,7 @@ def main(argv=None):
                              'root-enter-prog', 'root-exit-prog',
                              'detect-vin', 'backup-coding', 'preflight-coding', 'verify-coding', 'restore-coding',
                              'test', 'store-install', 'restart-head-unit',
+                             'bridge-probe', 'bridge-install', 'bridge-uninstall', 'bridge-car-probe',
                              'install-ridetube', 'install-idrive-apps', 'install-car-apps', 'install-our-apps',
                              'usb-repo', 'pid-capture'])
     ap.add_argument('--key', help='root SSH private key (id_rsa from the root-access step)')
@@ -1586,6 +1689,13 @@ def main(argv=None):
                 ap.error('--key is needed')
             do_restart_head_unit(a.ip or ip_from_key(a.key) or DEFAULT_IP, a.key, log=log, wait=not a.no_wait)
             log('The head unit restarted.' if not a.no_wait else 'Restart requested.')
+            return
+        if a.action in ('bridge-probe', 'bridge-install', 'bridge-uninstall', 'bridge-car-probe'):
+            if not a.key:
+                ap.error('--key is needed (do the root-access step first)')
+            beem_action = {'bridge-probe': 'probe', 'bridge-install': 'install',
+                           'bridge-uninstall': 'uninstall', 'bridge-car-probe': 'car-probe'}[a.action]
+            do_beem(beem_action, ssh, a.ip or ip_from_key(a.key) or DEFAULT_IP, a.key, log=log)
             return
         if a.action in ('install-idrive-apps', 'install-car-apps', 'install-ridetube', 'install-our-apps'):
             if not a.key and not a.stage:

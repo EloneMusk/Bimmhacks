@@ -42,13 +42,16 @@ gates. Build and use: [docs/POCKET.md](docs/POCKET.md) (`installer/pocket_server
 
 <table>
 <tr>
-<td width="33%"><img src="installer/screenshots/01-root-access.png" alt="Root access"><br><sub><b>Root access.</b> Back up the coding, flash + enable SSH; the experimental coding-restore card is on the right.</sub></td>
-<td width="33%"><img src="installer/screenshots/02-app-store.png" alt="App Store"><br><sub><b>App Store.</b> Install the on-car Store and restart the head unit; add RideTube or your own repo as a source.</sub></td>
-<td width="33%"><img src="installer/screenshots/03-credits.png" alt="Credits"><br><sub><b>Credits.</b> The people and projects behind every part.</sub></td>
+<td width="50%"><img src="installer/screenshots/01-root-access.png" alt="Root access"><br><sub><b>Root access.</b> Back up the coding, flash + enable SSH; the experimental coding-restore card is on the right.</sub></td>
+<td width="50%"><img src="installer/screenshots/02-app-store.png" alt="App Store"><br><sub><b>App Store.</b> Install the on-car Store and restart the head unit; add RideTube or your own repo as a source.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="installer/screenshots/03-wireless-bridge.png" alt="Wireless Bridge"><br><sub><b>Wireless Bridge.</b> Deploy the BeeM-Flash root helper and run its read-only probes (experimental; off until enabled on the car).</sub></td>
+<td width="50%"><img src="installer/screenshots/04-credits.png" alt="Credits"><br><sub><b>Credits.</b> The people and projects behind every part.</sub></td>
 </tr>
 </table>
 
-Three tabs, worked left to right — nothing else:
+Four tabs, worked left to right:
 
 - **Root access.** Detect the VIN by broadcast, **back up the coding** over ENET, then **Flash + enable
   SSH** — which forces a backup first (take one now, or confirm a warning that you have one from another
@@ -58,6 +61,11 @@ Three tabs, worked left to right — nothing else:
 - **App Store.** Install the on-car MGU **App Store** (its renderer and internet uplink, each explained),
   and the installer restarts the head unit for you so the Store comes up. Add **RideTube** (and your own
   repo) to it in one click — from there every app installs on the car, from the Store.
+- **Wireless Bridge.** Deploy the [BeeM-Flash](https://github.com/waliworld/BeeM-Flash) wireless-bridge
+  root helper to a rooted unit (so a phone / xHP can reach the car *through* the MGU over Wi-Fi), and run
+  its read-only probes (AP capability, and a car-side network / reachability probe) for testing and
+  development. Experimental and for your own car: the bridge is **off by default** and is enabled on the
+  car with its own consent gates — the installer only deploys the helper and runs the probes.
 - **Credits.**
 
 The hero shot was taken on Linux against the test suite's fake car (no real car), so Windows shows the
@@ -102,6 +110,7 @@ backup — from this tool, BimmerCode, E-Sys or Autel.
 | `installer/pocket_server.py`, `installer/pocket/` | Bimmhacks Pocket: the box server + phone page (shipped in the Pocket zip) |
 | `tools/idrive7-8-ssh-root/` | the root-access tool (public domain) |
 | `tools/mgu-store/` | the on-car App Store installer (`mgu-install.js`, GPL-3.0) |
+| `tools/beem-flash/` | the BeeM-Flash wireless-bridge root helper + probes (MIT); deployed by the Wireless Bridge tab |
 | `idrive7-apps/` | app sources & tools (not shipped in either zip — apps install from the on-car Store) |
 | [CLIENT-GUIDE.md](CLIENT-GUIDE.md) | step-by-step guide for clients (goes into the PC zip) |
 | [docs/Store-Sources.pdf](docs/Store-Sources.pdf) | recommended app repos not bundled with the Store: the exact text to add each on the car, by iDrive 7 / 8, with links (PC zip). Built from `docs/store-sources.json` by `installer/make_store_sources_pdf.py` |
@@ -138,6 +147,10 @@ python3 installer/bimmhacks_installer.py restart-head-unit --key <id_rsa>       
 python3 installer/bimmhacks_installer.py install-ridetube --key <id_rsa>           # add RideTube to the Store's sources
 python3 installer/bimmhacks_installer.py install-idrive-apps --key <id_rsa>        # add cluster/HUD maps as a Store source
 python3 installer/bimmhacks_installer.py install-our-apps --key <id_rsa> --repo owner/repo
+python3 installer/bimmhacks_installer.py bridge-probe --key <id_rsa>               # read-only: can this unit host a Wi-Fi AP?
+python3 installer/bimmhacks_installer.py bridge-install --key <id_rsa>             # deploy the BeeM-Flash bridge helper (root service)
+python3 installer/bimmhacks_installer.py bridge-car-probe --key <id_rsa>           # read-only car-side network / reachability probe
+python3 installer/bimmhacks_installer.py bridge-uninstall --key <id_rsa>           # remove the bridge helper
 python3 installer/pid_capture.py drive.pcapng                                      # identifiers a logger read (Wireshark capture)
 ```
 

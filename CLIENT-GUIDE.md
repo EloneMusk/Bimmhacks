@@ -136,6 +136,26 @@ branch), and the repo's link so you can read about it on your PC.
 > head unit. If the installer says *the Store's updater is not running yet*, restart the head unit
 > (car **Settings**, or power-cycle), wait a minute, and click the button again.
 
+## Wireless Bridge (experimental — your own car)
+
+The **Wireless Bridge** tab deploys the [BeeM-Flash](https://github.com/waliworld/BeeM-Flash) wireless
+bridge: a small root helper on the head unit so a phone or a tool like **xHP** can reach the car *through*
+the MGU over Wi-Fi — no ENET cable or paid Wi-Fi-ENET adapter. Root access must be done first (it needs
+the car SSH key).
+
+> This is experimental and for a car you own. The installer only **deploys the helper and runs read-only
+> probes** — it never turns the bridge on. The bridge stays **off by default** and is enabled on the car
+> itself, through BeeM-Flash's own consent gates (acknowledge → enable → a short time-boxed lease).
+
+- **Check unit (AP probe)** — read-only. Reports whether this head unit's Wi-Fi can host an access point.
+  Changes nothing.
+- **Install bridge helper** — copies the helper to the unit and installs it as a root service (it starts
+  at boot). Afterwards, on the car: **BeeM-Flash → CONNECT → WIRELESS BRIDGE**.
+- **Remove bridge helper** — stops the service and removes it; the access point goes down.
+- **Developer probes → Car probe** — read-only. Maps the unit's network and tests whether a phone on the
+  hotspot can reach a listener on the head unit (it opens a short-lived listener for about a minute). It
+  sends nothing to the car. **Bridge design & status** opens the design notes.
+
 ## Phone instead of a laptop: Bimmhacks Pocket
 
 Bimmhacks Pocket is a **separate package** — a small box (a Raspberry Pi) with an ENET cable. With one
