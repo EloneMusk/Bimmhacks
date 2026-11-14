@@ -65,7 +65,9 @@ Four tabs, worked left to right:
   root helper to a rooted unit (so a phone / xHP can reach the car *through* the MGU over Wi-Fi), and run
   its read-only probes (AP capability, and a car-side network / reachability probe) for testing and
   development. Experimental and for your own car: the bridge is **off by default** and is enabled on the
-  car with its own consent gates — the installer only deploys the helper and runs the probes.
+  car with its own consent gates — the installer only deploys the helper and runs the probes. While it is
+  in testing the tab is **access-code gated** (owner sets the code with `bridge-set-code`), so only
+  invited testers can open it.
 - **Credits.**
 
 The hero shot was taken on Linux against the test suite's fake car (no real car), so Windows shows the

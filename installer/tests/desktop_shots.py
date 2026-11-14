@@ -15,6 +15,11 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 OUT = os.environ.get('OUT') or os.path.join(REPO, 'installer', 'screenshots')
 os.makedirs(OUT, exist_ok=True)
 W, H = 1020, 940
+# the Wireless Bridge tab is access-gated; for the screenshot we set a known code so the shot shows the
+# tab's controls instead of the lock screen
+import hashlib  # noqa: E402
+BRIDGE_CODE = 'shots'
+os.environ['BIMMHACKS_BRIDGE_CODE_HASH'] = hashlib.sha256(BRIDGE_CODE.encode()).hexdigest()
 sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(REPO, 'installer'))
 sys.path.insert(0, os.path.join(REPO, 'tools', 'idrive7-8-ssh-root'))
 import bimmhacks_installer as bi  # noqa: E402
@@ -73,10 +78,19 @@ def mainloop(root, *a):
         tabs()[i].event_generate('<Button-1>')
         root.update(); root.update_idletasks()
 
+    def unlock_bridge():
+        ents = all_of(root, lambda c: c.winfo_class() == 'TEntry' and str(c.cget('show')) not in ('', 'None'))
+        if ents:
+            ents[0].delete(0, 'end'); ents[0].insert(0, BRIDGE_CODE)
+        for b in all_of(root, lambda c: c.winfo_class() == 'TButton' and c.cget('text') == 'Unlock'):
+            b.invoke()
+        root.update(); root.update_idletasks()
+
     def run():
         shot('01-root-access')              # root access + the experimental coding-restore card
         go_tab(1); shot('02-app-store')      # the on-car App Store installer
-        go_tab(2); shot('03-wireless-bridge')  # the BeeM-Flash wireless bridge + developer probes
+        go_tab(2); shot('bridge-locked')     # the access gate testers see before unlocking
+        unlock_bridge(); shot('03-wireless-bridge')  # unlocked: the bridge + developer probes
         go_tab(3); shot('04-credits')
         print('shots:', len(shots))
         root.destroy()

@@ -29,9 +29,9 @@ Needs Python 3.6+, Node.js 14+ and the OpenSSH client (built into Windows 10/11,
 Stage A (root access) also needs the `cryptography` Python package; the installer offers to add
 it. Stage C (App Store) needs internet at the car (or a prepared USB stick).
 """
-import argparse, json, os, queue, re, shutil, stat, subprocess, sys, tempfile, threading, time
+import argparse, hashlib, json, os, queue, re, shutil, stat, subprocess, sys, tempfile, threading, time
 
-VERSION = '1.11.0'
+VERSION = '1.11.1'
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 DEFAULT_IP = '169.254.36.47'                # the unit's address with the idrive7-8-ssh-root tool
@@ -46,7 +46,22 @@ SSHROOT_ENROLL = os.path.join(SSHROOT_DIR, 'data', 'enrollments')
 STORE_DIR = os.environ.get('BIMMHACKS_STORE_DIR') or os.path.join(REPO, 'tools', 'mgu-store')
 STORE_JS = os.path.join(STORE_DIR, 'mgu-install.js')
 BEEM_DIR = os.environ.get('BIMMHACKS_BEEM_DIR') or os.path.join(REPO, 'tools', 'beem-flash')
+# The Wireless Bridge tab is experimental and access-gated during testing: the tab is locked until the
+# tester enters the access code the owner gave them. Only the SHA-256 of the code is stored (never the
+# code itself), so reading the source does not reveal it. The owner changes the shared code with
+# `bimmhacks_installer.py bridge-set-code` (it rewrites this line), or overrides it per machine with the
+# BIMMHACKS_BRIDGE_CODE_HASH env var. Default code: "beem-test" - CHANGE IT before you hand builds out.
+BRIDGE_CODE_HASH = 'feed624f9eb3a60c70d8e3a862b29763e381eb0b8814e574209f5ea24579efea'
 ARCHES = ('id7', 'id8-bdc3', 'id8-bcp')
+
+
+def bridge_code_hash():
+    return (os.environ.get('BIMMHACKS_BRIDGE_CODE_HASH') or BRIDGE_CODE_HASH).strip().lower()
+
+
+def bridge_code_ok(code):
+    """True if `code` matches the Wireless Bridge access code (compared by SHA-256; never stored plain)."""
+    return bool(code) and hashlib.sha256(code.strip().encode('utf-8')).hexdigest() == bridge_code_hash()
 CODING_BACKUP_PY = os.path.join(HERE, 'coding_backup.py')
 
 
@@ -684,6 +699,34 @@ def do_beem(action, ssh, ip, key, log=print):
         return code, out
     finally:
         car.close()
+
+
+def set_bridge_code(log=print):
+    """Change the shared Wireless Bridge access code: prompt for a new code and rewrite BRIDGE_CODE_HASH
+    in this file (only the SHA-256 is stored). The owner runs this, then rebuilds the client package so the
+    chosen testers' builds carry the new code."""
+    import getpass
+    try:
+        code = getpass.getpass('New Wireless Bridge access code: ')
+        again = getpass.getpass('Repeat it: ')
+    except (EOFError, KeyboardInterrupt):
+        raise InstallerError('Cancelled; nothing changed.')
+    code = code.strip()
+    if not code or code != again.strip():
+        raise InstallerError('The codes were empty or did not match; nothing changed.')
+    h = hashlib.sha256(code.encode('utf-8')).hexdigest()
+    src_path = os.path.abspath(__file__)
+    with open(src_path, encoding='utf-8') as f:
+        src = f.read()
+    new, n = re.subn(r"^BRIDGE_CODE_HASH = '[0-9a-f]{64}'",
+                     "BRIDGE_CODE_HASH = '%s'" % h, src, count=1, flags=re.M)
+    if n != 1:
+        raise InstallerError('Could not find the BRIDGE_CODE_HASH line to update in %s.' % src_path)
+    with open(src_path, 'w', encoding='utf-8') as f:
+        f.write(new)
+    log('Wireless Bridge access code updated (stored as a SHA-256 hash).')
+    log('Rebuild the package so your testers get it:  python3 installer/make_client_package.py --pc')
+    log('Give the new code only to the testers you intend to let in.')
 
 
 # ---- extra app sources installed through the Store (idrive-apps, and our own apps) --------------
@@ -1436,7 +1479,33 @@ def run_gui():
 
     # ======================================================= 3. Wireless bridge (BeeM-Flash)
     p4 = section('Wireless Bridge')
-    l4, r4c = two_up(p4, (3, 2))
+    # access gate (testing): the tab is locked until the tester enters the owner's access code
+    gate = tk.Frame(p4, bg=BG)
+    gate.pack(fill='x')
+    bridge_body = tk.Frame(p4, bg=BG)          # the real content, shown only after unlock
+    gcard = card(gate, pady=(10, 10))
+    kicker(gcard, 'Experimental  ·  testers only')
+    title(gcard, 'Access-controlled during testing')
+    para(gcard, 'The wireless bridge is experimental and limited to the testers the owner has invited. Enter the '
+                'access code you were given to open this section. It stays locked until testing is done.', wrap=560)
+    code_var = tk.StringVar()
+    grow = row(gcard, pady=(10, 10))
+    ent = ttk.Entry(grow, textvariable=code_var, show='•', width=26)
+    ent.pack(side='left', padx=4)
+
+    def unlock(*_):
+        if bridge_code_ok(code_var.get()):
+            code_var.set('')
+            gate.pack_forget()
+            bridge_body.pack(fill='x')
+        else:
+            code_var.set('')
+            messagebox.showerror('Wireless bridge', 'That access code is not correct.')
+            ent.focus_set()
+    button(grow, 'Unlock', unlock, style='Accent.TButton')
+    ent.bind('<Return>', unlock)
+
+    l4, r4c = two_up(bridge_body, (3, 2))
     c4 = card(l4, pady=(0, 10), padx=(22, 6))
     kicker(c4, 'Experimental  ·  needs root')
     title(c4, 'BeeM-Flash wireless bridge')
@@ -1596,6 +1665,7 @@ def main(argv=None):
                              'detect-vin', 'backup-coding', 'preflight-coding', 'verify-coding', 'restore-coding',
                              'test', 'store-install', 'restart-head-unit',
                              'bridge-probe', 'bridge-install', 'bridge-uninstall', 'bridge-car-probe',
+                             'bridge-set-code',
                              'install-ridetube', 'install-idrive-apps', 'install-car-apps', 'install-our-apps',
                              'usb-repo', 'pid-capture'])
     ap.add_argument('--key', help='root SSH private key (id_rsa from the root-access step)')
@@ -1661,6 +1731,9 @@ def main(argv=None):
             if not cap:
                 ap.error('--capture <file> is needed')
             do_pid_capture(cap, log=log, out_dir=a.out)
+            return
+        if a.action == 'bridge-set-code':
+            set_bridge_code(log=log)
             return
 
         if a.action == 'usb-repo':

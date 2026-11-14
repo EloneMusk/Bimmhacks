@@ -143,6 +143,11 @@ bridge: a small root helper on the head unit so a phone or a tool like **xHP** c
 the MGU over Wi-Fi — no ENET cable or paid Wi-Fi-ENET adapter. Root access must be done first (it needs
 the car SSH key).
 
+> **Access code (testing).** While the bridge is in testing this tab is **locked**: open it by entering
+> the access code the owner gave you, then **Unlock**. Only invited testers get the code; it stays this
+> way until testing is done. (Owners: change the shared code with
+> `python3 installer/bimmhacks_installer.py bridge-set-code`, then rebuild the package.)
+
 > This is experimental and for a car you own. The installer only **deploys the helper and runs read-only
 > probes** — it never turns the bridge on. The bridge stays **off by default** and is enabled on the car
 > itself, through BeeM-Flash's own consent gates (acknowledge → enable → a short time-boxed lease).

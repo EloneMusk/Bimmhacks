@@ -108,5 +108,29 @@ class BridgeDeploy(unittest.TestCase):
             bi.do_beem('probe', self.stub, '127.0.0.1', os.path.join(self.dir, 'nope'), log=lambda m: None)
 
 
+class BridgeAccessCode(unittest.TestCase):
+    """The Wireless Bridge tab is gated by an access code (compared by SHA-256, never stored plain)."""
+
+    def tearDown(self):
+        os.environ.pop('BIMMHACKS_BRIDGE_CODE_HASH', None)
+
+    def test_only_the_right_code_unlocks(self):
+        import hashlib
+        os.environ['BIMMHACKS_BRIDGE_CODE_HASH'] = hashlib.sha256(b'secret-123').hexdigest()
+        self.assertTrue(bi.bridge_code_ok('secret-123'))
+        self.assertTrue(bi.bridge_code_ok('  secret-123  '))     # trimmed
+        self.assertFalse(bi.bridge_code_ok('secret-124'))
+        self.assertFalse(bi.bridge_code_ok(''))
+        self.assertFalse(bi.bridge_code_ok(None))
+
+    def test_the_source_stores_only_a_hash_not_the_code(self):
+        src = open(os.path.join(REPO, 'installer', 'bimmhacks_installer.py'), encoding='utf-8').read()
+        import re
+        m = re.search(r"^BRIDGE_CODE_HASH = '([0-9a-f]{64})'", src, re.M)
+        self.assertIsNotNone(m, 'the hash constant must exist')
+        # whatever the default code is, the plaintext must not sit next to the hash
+        self.assertNotIn('BRIDGE_CODE_PLAIN', src)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
